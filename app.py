@@ -11,8 +11,9 @@ st.set_page_config(page_title="ECG Heartbeat Classifier", page_icon="🫀")
 # 2. FUNGSI LOAD ASSETS
 @st.cache_resource
 def load_assets():
+    # Menggunakan nama file sesuai yang Anda miliki
     model = load_model('model_cnn_final.h5')
-    scaler = joblib.load('scaler_final.pkl')
+    scaler = joblib.load('scaler.pkl') 
     return model, scaler
 
 try:
@@ -32,19 +33,15 @@ class_mapping = {
 
 # 4. ANTARMUKA PENGGUNA (UI)
 st.title("🫀 ECG Heartbeat Classification")
-st.markdown("""
-Aplikasi ini mendeteksi anomali detak jantung menggunakan model **CNN**. 
-Data bersumber dari rekaman pasien *Congestive Heart Failure* di PhysioNet.
-""")
+st.markdown("Aplikasi deteksi anomali detak jantung menggunakan model CNN.")
 
 if assets_loaded:
-    # Langsung ke menu Unggah CSV
     uploaded_file = st.file_uploader("Unggah file CSV (140 kolom fitur)", type="csv")
 
     if uploaded_file is not None:
         input_data = pd.read_csv(uploaded_file)
         
-        # --- PRE-PROCESSING KOLOM (HANYA ANGKA) ---
+        # Pre-processing kolom
         numeric_data = input_data.select_dtypes(include=[np.number])
         if 'target' in numeric_data.columns:
             signal_features = numeric_data.drop(columns=['target'])
@@ -52,19 +49,28 @@ if assets_loaded:
             signal_features = numeric_data.iloc[:, :140]
         
         signal_features = signal_features.iloc[:, :140]
-
-        # --- NAVIGASI SAMPEL (INPUT NOMOR) ---
-        st.sidebar.header("🔍 Navigasi")
         max_idx = len(signal_features) - 1
+
+        # --- LOGIKA TOMBOL ACAK (DIPERBAIKI) ---
+        if 'selected_index' not in st.session_state:
+            st.session_state.selected_index = 0
+
+        st.sidebar.header("🔍 Navigasi")
         
+        # Fungsi untuk mengacak index
+        def randomize():
+            st.session_state.selected_index = np.random.randint(0, max_idx)
+
+        # Tombol Acak
+        st.sidebar.button("🎲 Pilih Acak", on_click=randomize)
+        
+        # Input Nomor Sampel (Terhubung ke session_state)
         idx = st.sidebar.number_input(
             f"Masukkan Nomor Sampel (0 - {max_idx}):", 
-            min_value=0, max_value=max_idx, value=0, step=1
+            min_value=0, 
+            max_value=max_idx, 
+            key='selected_index' # Menghubungkan langsung ke state
         )
-        
-        if st.sidebar.button("🎲 Pilih Acak"):
-            st.session_state.random_idx = np.random.randint(0, max_idx)
-            st.rerun()
 
         # 5. VISUALISASI
         st.subheader(f"📊 Visualisasi Sinyal ECG (Indeks: {idx})")
@@ -77,7 +83,7 @@ if assets_loaded:
             actual = input_data.iloc[idx]['class_name']
             ax.set_title(f"Sinyal Aktual | Label Asli: {actual}")
         
-        ax.set_xlabel("Waktu (Timesteps)")
+        ax.set_xlabel("Waktu")
         ax.set_ylabel("Amplitudo")
         ax.grid(True, alpha=0.2)
         st.pyplot(fig)
@@ -110,4 +116,4 @@ if assets_loaded:
         st.info("💡 Silakan unggah file CSV untuk memulai analisis.")
 
 st.sidebar.markdown("---")
-st.sidebar.write("Sumber: [PhysioNet](https://physionet.org/)")
+st.sidebar.write("Sumber Data: [PhysioNet](https://physionet.org/)")
