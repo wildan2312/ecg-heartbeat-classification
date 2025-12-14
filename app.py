@@ -53,40 +53,64 @@ if assets_loaded:
         st.info("Silakan unggah file CSV hasil pembersihan data untuk memulai.")
 
     if input_data is not None:
-        # --- PERBAIKAN DI SINI ---
-        # 1. Hanya ambil kolom numerik (membuang kolom teks seperti 'class_name')
+        # 1. Identifikasi Fitur Sinyal (Hanya angka!)
         numeric_data = input_data.select_dtypes(include=[np.number])
         
-        # 2. Buang kolom 'target' jika ada, agar hanya tersisa 140 fitur sinyal
-        if 'target' in numeric_data.columns:
-            signal_features = numeric_data.drop(columns=['target'])
+        # Buat kolom target jika ada untuk keperluan filter
+        target_col = 'target' if 'target' in input_data.columns else None
+        
+        if target_col:
+            signal_features = numeric_data.drop(columns=[target_col])
         else:
             signal_features = numeric_data.iloc[:, :140]
-
-        # Pastikan kita hanya mengambil 140 kolom pertama (sesuai input model)
-        signal_features = signal_features.iloc[:, :140]
-        # -------------------------
-
-        st.subheader("📊 Visualisasi Sinyal ECG")
         
-        # Ambil baris pertama dari data yang sudah bersih dari teks
-        sample_signal = signal_features.iloc[0].values
+        signal_features = signal_features.iloc[:, :140]
+
+        # --- FITUR DINAMIS BARU ---
+        st.sidebar.divider()
+        st.sidebar.subheader("🔍 Navigasi Data")
+        
+        # Slider untuk memilih nomor baris (Indeks)
+        max_index = len(signal_features) - 1
+        selected_index = st.sidebar.slider("Pilih Nomor Sampel:", 0, max_index, 0)
+        
+        # Tombol untuk memilih acak
+        if st.sidebar.button("🎲 Pilih Sampel Acak"):
+            selected_index = np.random.randint(0, max_index)
+            # Karena Streamlit merefresh page, kita gunakan session_state jika ingin index menetap
+            st.session_state.selected_index = selected_index
+        
+        # Gunakan index dari slider atau tombol acak
+        idx = selected_index
+        # --------------------------
+
+        st.subheader(f"📊 Visualisasi Sinyal ECG (Sampel Ke-{idx})")
+        
+        # Ambil baris berdasarkan pilihan user (Dynamic Indexing)
+        sample_signal = signal_features.iloc[idx].values
         
         fig, ax = plt.subplots(figsize=(10, 4))
         ax.plot(sample_signal, color='#1f77b4', linewidth=2)
-        ax.set_title("Bentuk Gelombang Detak Jantung (Sampel Pertama)")
+        
+        # Tambahkan informasi label asli jika tersedia di CSV
+        if 'class_name' in input_data.columns:
+            actual_label = input_data.iloc[idx]['class_name']
+            ax.set_title(f"Bentuk Gelombang Detak Jantung | Label Asli: {actual_label}")
+        else:
+            ax.set_title(f"Bentuk Gelombang Detak Jantung (Indeks: {idx})")
+            
         ax.set_xlabel("Titik Waktu (Timesteps)")
         ax.set_ylabel("Amplitudo")
+        ax.grid(True, alpha=0.2)
         st.pyplot(fig)
 
         # 5. PREPROCESSING & PREDIKSI
-        if st.button("Klasifikasikan Detak Jantung"):
+        if st.button(f"Klasifikasikan Sampel Ke-{idx}"):
             try:
-                # Scaling menggunakan fitur yang sudah bersih
-                scaled_data = scaler.transform(signal_features)
-                
-                # Reshape untuk input CNN (Samples, 140, 1)
-                reshaped_data = scaled_data.reshape(scaled_data.shape[0], 140, 1)
+                # Ambil hanya satu baris yang dipilih untuk diprediksi
+                single_sample = signal_features.iloc[[idx]] 
+                scaled_data = scaler.transform(single_sample)
+                reshaped_data = scaled_data.reshape(1, 140, 1)
                 
                 # Prediksi
                 predictions = model.predict(reshaped_data)
@@ -96,16 +120,21 @@ if assets_loaded:
                 # Tampilkan Hasil
                 st.divider()
                 hasil = class_mapping.get(pred_class, "Kelas Tidak Dikenal")
-                st.subheader(f"Hasil Prediksi: **{hasil}**")
-                st.write(f"Tingkat Kepercayaan Model: **{confidence:.2f}%**")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Hasil Prediksi", hasil)
+                with col2:
+                    st.metric("Kepercayaan Model", f"{confidence:.2f}%")
                 
                 if pred_class == 0:
-                    st.success("Kondisi Jantung Terdeteksi Normal.")
+                    st.success("Analisis: Kondisi Jantung Terdeteksi Normal.")
                 else:
-                    st.warning("Peringatan: Terdeteksi Anomali pada Sinyal Jantung.")
-            
+                    st.warning("Peringatan: Terdeteksi Pola Anomali.")
+                    
             except Exception as e:
                 st.error(f"Terjadi kesalahan saat prediksi: {e}")
 
 st.sidebar.markdown("---")
 st.sidebar.write("Sumber Data: [PhysioNet](https://physionet.org/)")
+
